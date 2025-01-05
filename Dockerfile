@@ -1,13 +1,18 @@
-FROM gcc:latest
+FROM openjdk:11-jdk-slim
 
-# Set the working directory
 WORKDIR /app
 
-# Copy the current directory contents into the container at /app
-COPY src ./src
+COPY gradlew gradlew
+COPY gradle gradle
+COPY build.gradle build.gradle
+COPY settings.gradle settings.gradle
 
-# Build the C++ application
-RUN g++ -o ViewTXO ./src/main.cpp
+RUN chmod +x gradlew
 
-# Run the C++ application
-CMD ["./ViewTXO"]
+RUN ./gradlew build --no-daemon || return 0
+
+COPY . .
+
+RUN ./gradlew build --no-daemon
+
+CMD ["java", "-jar", "build/libs/ViewTXO.jar"]
