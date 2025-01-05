@@ -1,0 +1,9 @@
+/build
+*.o
+*.out
+*.exe
+
+docker-compose.override.yml
+docker-compose.override.yaml
+
+.vscode/
