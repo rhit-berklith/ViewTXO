@@ -1,7 +1,0 @@
-services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: ViewTXO
-    command: ["java", "-jar", "build/libs/ViewTXO-all.jar"]
