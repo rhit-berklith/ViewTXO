@@ -3,7 +3,7 @@ import * as d3 from 'd3';
 import GridBackground from './GridBackground';
 import TransactionChart from './TransactionChart';
 
-const CanvasBackground = ({ recenterRef, transactionData, lineThicknessRatio, lineSpacing, lineLength, minLineThickness }) => { // Added props
+const CanvasBackground = ({ recenterRef, transactionData, onHover, lineThicknessRatio, lineSpacing, lineLength, minLineThickness }) => { // Added props
   const svgRef = useRef();
   const zoomRef = useRef();
   const [transform, setTransform] = useState(d3.zoomIdentity);
@@ -46,7 +46,7 @@ const CanvasBackground = ({ recenterRef, transactionData, lineThicknessRatio, li
   }, [recenterRef]);
 
   return (
-    <>
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <GridBackground transform={transform} />
       <svg
         ref={svgRef}
@@ -57,12 +57,13 @@ const CanvasBackground = ({ recenterRef, transactionData, lineThicknessRatio, li
           top: 0,
           left: 0,
           pointerEvents: 'all',
-          zIndex: 1
+          zIndex: 2  // Increased z-index
         }}
       >
         <g className="zoom-container">
           <TransactionChart 
             transactionData={transactionData}
+            onHover={onHover}
             lineThicknessRatio={lineThicknessRatio} // Forward prop
             lineSpacing={lineSpacing} // Forward prop
             lineLength={lineLength}
@@ -70,7 +71,7 @@ const CanvasBackground = ({ recenterRef, transactionData, lineThicknessRatio, li
           />
         </g>
       </svg>
-    </>
+    </div>
   );
 };
 

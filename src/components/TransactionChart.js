@@ -3,17 +3,24 @@ import * as d3 from 'd3';
 
 const TransactionChart = ({ 
   transactionData, 
-  lineThicknessRatio, 
-  lineSpacing,
-  lineLength,
-  minLineThickness,
+  lineThicknessRatio = 1,
+  lineSpacing = 10,
+  lineLength = 400,
+  minLineThickness = 0.1,
+  onHover
 }) => {
   const groupRef = useRef();
 
   useEffect(() => {
-    if (!transactionData || !transactionData.vin || !transactionData.vout) return;
+    console.log('TransactionChart mounting, groupRef:', groupRef.current);
+    if (!transactionData || !transactionData.vin || !transactionData.vout) {
+      console.log('No transaction data');
+      return;
+    }
 
     const g = d3.select(groupRef.current);
+    console.log('D3 selection:', g.node());
+
     g.selectAll('*').remove();
 
     // Calculate the total input and output values for proportional scaling
@@ -87,7 +94,14 @@ const TransactionChart = ({
         `)
         .attr('stroke', '#0f0')
         .attr('stroke-width', thickness)
-        .attr('fill', 'none');
+        .attr('fill', 'none')
+        .style('cursor', 'pointer')
+        .on('mouseenter', () => {
+          onHover(transactionData.vin[i], 'input');
+        })
+        .on('mouseleave', () => {
+          onHover(null, null);
+        });
 
       inputEndpointY += thickness + lineSpacing;
     });
@@ -106,7 +120,14 @@ const TransactionChart = ({
         `)
         .attr('stroke', '#0ff')
         .attr('stroke-width', thickness)
-        .attr('fill', 'none');
+        .attr('fill', 'none')
+        .style('cursor', 'pointer')
+        .on('mouseenter', () => {
+          onHover(transactionData.vout[i], 'output');
+        })
+        .on('mouseleave', () => {
+          onHover(null, null);
+        });
 
       outputEndpointY += thickness + lineSpacing;
     });
@@ -125,23 +146,26 @@ const TransactionChart = ({
         `)
         .attr('stroke', '#f55')
         .attr('stroke-width', feeThickness)
-        .attr('fill', 'none');
+        .attr('fill', 'none')
+        .style('cursor', 'pointer')
+        .style('pointer-events', 'all') // Ensure events are captured
+        .on('mouseenter', () => {
+          onHover({ 
+            value: transactionData.fee,
+            scriptpubkey_address: null, // No address for fee
+            scriptpubkey_type: null
+          }, 'fee');
+        })
+        .on('mouseleave', () => {
+          onHover(null, null);
+        });
     }
 
-  }, [transactionData, lineThicknessRatio, lineSpacing, lineLength, minLineThickness]); // Add dependencies
+  }, [transactionData, lineThicknessRatio, lineSpacing, lineLength, minLineThickness, onHover]); // Add dependencies
 
-  return (
-    <svg width="100%" height="100%" viewBox={`${-lineLength/2} -200 ${lineLength} 400`}>
-      <g ref={groupRef} />
-    </svg>
-  );
-};
+  console.log('Rendering TransactionChart');
 
-TransactionChart.defaultProps = {
-  lineLength: 400,
-  minLineThickness: 0.1,
-  lineThicknessRatio: 1,
-  lineSpacing: 10
+  return <g ref={groupRef} transform={`translate(${-lineLength/2},0)`} />;
 };
 
 export default TransactionChart;

@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { fetchTransaction } from '../api/api';
 import CanvasBackground from './CanvasBackground';
+import UTXOInfo from './UTXOInfo';
 
 const App = () => {
   const [transactionId, setTransactionId] = useState('');
@@ -12,6 +13,9 @@ const App = () => {
   const [lineSpacing, setLineSpacing] = useState(10); // Default spacing in pixels
   const [lineLength, setLineLength] = useState(400); // Default line length
   const [minLineThickness, setMinLineThickness] = useState(0.1); // Default minimum thickness
+
+  const [hoveredUtxo, setHoveredUtxo] = useState(null);
+  const [hoveredType, setHoveredType] = useState(null);
 
   const handleInputChange = (e) => {
     setTransactionId(e.target.value);
@@ -37,6 +41,10 @@ const App = () => {
         lineSpacing={lineSpacing} // Pass slider value
         lineLength={lineLength}
         minLineThickness={minLineThickness}
+        onHover={(utxo, type) => {
+          setHoveredUtxo(utxo);
+          setHoveredType(type);
+        }}
       />
       <div style={{
         position: 'absolute',
@@ -167,6 +175,22 @@ const App = () => {
           <span>{minLineThickness.toFixed(1)}</span>
         </label>
       </div>
+
+      {/* UTXOInfo Popup */}
+      {hoveredUtxo && (
+        <div style={{
+          position: 'absolute',
+          top: 10,
+          right: 10,
+          zIndex: 1000
+        }}>
+          <UTXOInfo
+            utxo={hoveredUtxo}
+            totalValue={transactionData.vin.reduce((sum, input) => sum + (input.prevout?.value || 0), 0)}
+            type={hoveredType}
+          />
+        </div>
+      )}
     </div>
   );
 };
