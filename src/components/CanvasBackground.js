@@ -1,53 +1,76 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import * as d3 from 'd3';
+import GridBackground from './GridBackground';
+import TransactionChart from './TransactionChart';
 
-const CanvasBackground = ({ recenterRef }) => {
+const CanvasBackground = ({ recenterRef, transactionData, lineThicknessRatio, lineSpacing, lineLength, minLineThickness }) => { // Added props
   const svgRef = useRef();
   const zoomRef = useRef();
+  const [transform, setTransform] = useState(d3.zoomIdentity);
 
   useEffect(() => {
     const svgEl = d3.select(svgRef.current);
-    const pattern = svgEl.select('#checkerboard');
+    const container = svgEl.select('.zoom-container');
+
     const zoom = d3.zoom()
-      .scaleExtent([0.5, 5])
+      .scaleExtent([0.1, 10]) // Extended zoom range
       .on('zoom', (event) => {
-        pattern.attr('patternTransform', `translate(${event.transform.x},${event.transform.y}) scale(${event.transform.k})`);
+        const { transform } = event;
+        container.attr('transform', transform);
+        setTransform(transform);
       });
+
     svgEl.call(zoom);
+
+    // Center initially
+    const { width, height } = svgRef.current.getBoundingClientRect();
+    const initialTransform = d3.zoomIdentity.translate(width / 2, height / 2);
+    svgEl.call(zoom.transform, initialTransform);
+    setTransform(initialTransform);
+
     zoomRef.current = zoom;
   }, []);
 
-  //recentering
+  // Recenter button
   useEffect(() => {
     if (recenterRef) {
       recenterRef.current = () => {
         const svgEl = d3.select(svgRef.current);
         const { width, height } = svgRef.current.getBoundingClientRect();
-        svgEl.transition().call(
-          zoomRef.current.translateTo,
-          0,
-          0,
-          [width / 2, height / 2]
+        svgEl.transition().duration(750).call(
+          zoomRef.current.transform,
+          d3.zoomIdentity.translate(width / 2, height / 2)
         );
       };
     }
   }, [recenterRef]);
 
   return (
-    <svg
-      ref={svgRef}
-      style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
-    >
-      <defs>
-        <pattern id="checkerboard" width="20" height="20" patternUnits="userSpaceOnUse">
-          <rect x="0" y="0" width="10" height="10" fill="#333" />
-          <rect x="10" y="0" width="10" height="10" fill="#444" />
-          <rect x="0" y="10" width="10" height="10" fill="#444" />
-          <rect x="10" y="10" width="10" height="10" fill="#333" />
-        </pattern>
-      </defs>
-      <rect width="100%" height="100%" fill="url(#checkerboard)" />
-    </svg>
+    <>
+      <GridBackground transform={transform} />
+      <svg
+        ref={svgRef}
+        style={{
+          width: '100%',
+          height: '100%',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          pointerEvents: 'all',
+          zIndex: 1
+        }}
+      >
+        <g className="zoom-container">
+          <TransactionChart 
+            transactionData={transactionData}
+            lineThicknessRatio={lineThicknessRatio} // Forward prop
+            lineSpacing={lineSpacing} // Forward prop
+            lineLength={lineLength}
+            minLineThickness={minLineThickness}
+          />
+        </g>
+      </svg>
+    </>
   );
 };
 
