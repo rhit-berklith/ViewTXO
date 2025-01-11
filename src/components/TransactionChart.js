@@ -1,15 +1,29 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import * as d3 from 'd3';
+import { fetchTxOutspends } from '../api/api'; // New import
 
 const TransactionChart = ({ 
   transactionData, 
   lineThicknessRatio = 1,
   lineSpacing = 10,
-  lineLength = 400,
-  minLineThickness = 0.1,
+  lineLength = 1500, // Updated default line length
+  minLineThickness = 0.1, // Ensured minimum thickness ratio
   onHover
 }) => {
   const groupRef = useRef();
+  const [outspends, setOutspends] = useState(null);
+
+  useEffect(() => {
+    if (transactionData && transactionData.txid) {
+      fetchTxOutspends(transactionData.txid)
+        .then((data) => {
+          // 'data' is an array with length = number of outputs
+          // Each element indicates if/where the output is spent
+          setOutspends(data);
+        })
+        .catch(console.error);
+    }
+  }, [transactionData]);
 
   useEffect(() => {
     console.log('TransactionChart mounting, groupRef:', groupRef.current);
@@ -17,6 +31,7 @@ const TransactionChart = ({
       console.log('No transaction data');
       return;
     }
+    if (!outspends) return; // Wait until outspends are fetched
 
     const g = d3.select(groupRef.current);
     console.log('D3 selection:', g.node());
@@ -80,7 +95,7 @@ const TransactionChart = ({
     const totalHeight = Math.max(accumulatedInputHeight, accumulatedOutputHeight + (transactionData.fee ? feeThickness : 0));
     const verticalOffset = -totalHeight / 2;
 
-    // Draw inputs
+    // Draw inputs from -halfLength to 0
     inputThicknesses.forEach((thickness, i) => {
       const startY = inputEndpointY + thickness / 2;
       const middleY = verticalOffset + inputMiddlePositions[i];
@@ -88,8 +103,8 @@ const TransactionChart = ({
       g.append('path')
         .attr('d', `
           M ${-halfLength},${startY}
-          C ${cp1},${startY}
-          ${cp2},${middleY}
+          C ${-halfLength * 0.5},${startY}
+          ${-halfLength * 0.25},${middleY}
           0,${middleY}
         `)
         .attr('stroke', '#0f0')
@@ -106,7 +121,7 @@ const TransactionChart = ({
       inputEndpointY += thickness + lineSpacing;
     });
 
-    // Draw outputs
+    // Draw outputs from 0 to +halfLength, staying on the right side
     outputThicknesses.forEach((thickness, i) => {
       const endY = outputEndpointY + thickness / 2;
       const middleY = verticalOffset + outputMiddlePositions[i];
@@ -114,9 +129,9 @@ const TransactionChart = ({
       g.append('path')
         .attr('d', `
           M 0,${middleY}
-          C ${-cp2},${middleY}
-          ${-cp1},${endY}
-          ${halfLength},${endY}
+          C ${halfLength * 0.25},${middleY}
+            ${halfLength * 0.5},${endY}
+            ${halfLength},${endY}
         `)
         .attr('stroke', '#0ff')
         .attr('stroke-width', thickness)
@@ -129,10 +144,21 @@ const TransactionChart = ({
           onHover(null, null);
         });
 
+      // If outspends[i].spent is true, draw rectangle offset to the right
+      if (outspends[i]?.spent) {
+        g.append('rect')
+          .attr('x', halfLength + (lineSpacing / 2)) // Use lineSpacing/2 for offset
+          .attr('y', endY - thickness / 2) // Use the endpoint's Y instead of middleY
+          .attr('width', thickness * 2)       // 2× height => 2:1 ratio
+          .attr('height', thickness)
+          .attr('fill', '#aaa')
+          .style('cursor', 'pointer');
+      }
+
       outputEndpointY += thickness + lineSpacing;
     });
 
-    // Draw fee if exists with longer path
+    // Draw fee if exists, also from x=0 to x=+halfLength
     if (transactionData.fee) {
       const endY = outputEndpointY + feeThickness / 2;
       const middleY = verticalOffset + accumulatedOutputHeight + feeThickness / 2;
@@ -140,9 +166,9 @@ const TransactionChart = ({
       g.append('path')
         .attr('d', `
           M 0,${middleY}
-          C ${-cp2},${middleY}
-          ${-cp1},${endY}
-          ${halfLength},${endY}
+          C ${halfLength * 0.25},${middleY}
+            ${halfLength * 0.5},${endY}
+            ${halfLength},${endY}
         `)
         .attr('stroke', '#f55')
         .attr('stroke-width', feeThickness)
@@ -161,11 +187,11 @@ const TransactionChart = ({
         });
     }
 
-  }, [transactionData, lineThicknessRatio, lineSpacing, lineLength, minLineThickness, onHover]); // Add dependencies
+  }, [transactionData, outspends, lineThicknessRatio, lineSpacing, lineLength, minLineThickness, onHover]); // Add dependencies
 
   console.log('Rendering TransactionChart');
 
-  return <g ref={groupRef} transform={`translate(${-lineLength/2},0)`} />;
+  return <g ref={groupRef} />; // Removed the translate(...).
 };
 
 export default TransactionChart;

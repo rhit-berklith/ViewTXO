@@ -1,9 +1,9 @@
 import React, { useRef, useState, useEffect } from 'react';
 import * as d3 from 'd3';
-import GridBackground from './GridBackground';
+import SimpleBackground from './SimpleBackground';
 import TransactionChart from './TransactionChart';
 
-const CanvasBackground = ({ recenterRef, transactionData, onHover, lineThicknessRatio, lineSpacing, lineLength, minLineThickness }) => { // Added props
+const CanvasBackground = ({ recenterRef, transactionData, onHover, ...props }) => { // Added props
   const svgRef = useRef();
   const zoomRef = useRef();
   const [transform, setTransform] = useState(d3.zoomIdentity);
@@ -15,9 +15,8 @@ const CanvasBackground = ({ recenterRef, transactionData, onHover, lineThickness
     const zoom = d3.zoom()
       .scaleExtent([0.1, 10]) // Extended zoom range
       .on('zoom', (event) => {
-        const { transform } = event;
-        container.attr('transform', transform);
-        setTransform(transform);
+        container.attr('transform', event.transform);
+        setTransform(event.transform);
       });
 
     svgEl.call(zoom);
@@ -47,7 +46,7 @@ const CanvasBackground = ({ recenterRef, transactionData, onHover, lineThickness
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <GridBackground transform={transform} />
+      <SimpleBackground />
       <svg
         ref={svgRef}
         style={{
@@ -56,18 +55,14 @@ const CanvasBackground = ({ recenterRef, transactionData, onHover, lineThickness
           position: 'absolute',
           top: 0,
           left: 0,
-          pointerEvents: 'all',
-          zIndex: 2  // Increased z-index
+          // Remove the pointerEvents override so D3 can handle zoom/pan properly
         }}
       >
         <g className="zoom-container">
           <TransactionChart 
             transactionData={transactionData}
             onHover={onHover}
-            lineThicknessRatio={lineThicknessRatio} // Forward prop
-            lineSpacing={lineSpacing} // Forward prop
-            lineLength={lineLength}
-            minLineThickness={minLineThickness}
+            {...props}
           />
         </g>
       </svg>

@@ -21,11 +21,18 @@ const GridBackground = ({ transform }) => {
       const gridSize = 12.5; // Halved grid size
       const { x, y, k } = transform;
 
+      // Dynamically scale the base size to reduce detail at lower zoom levels
+      let adjustedGridSize = gridSize;
+      if (k < 0.5) { adjustedGridSize = gridSize * 2; }
+      if (k < 0.25) { adjustedGridSize = gridSize * 4; }
+      // ...and so on if you want more thresholds...
+
+      const scaledGridSize = adjustedGridSize * k;
+
       ctx.fillStyle = '#444';
       ctx.fillRect(0, 0, rect.width, rect.height);
 
       ctx.fillStyle = '#333';
-      const scaledGridSize = gridSize * k;
 
       // Calculate global tile indices to maintain consistent coloring
       const globalIStart = Math.floor(-x / scaledGridSize) - 1;

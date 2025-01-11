@@ -152,8 +152,8 @@ const App = () => {
           <input
             type="range"
             min="200"
-            max="800"
-            step="50"
+            max="1500" // Increased maximum from 800 to 1500
+            step="100" // Adjusted step for finer control
             value={lineLength}
             onChange={(e) => setLineLength(parseInt(e.target.value, 10))}
             style={{ width: '120px' }}
