@@ -14,38 +14,56 @@ import TransactionChart from './TransactionChart';
  * If you want to drag the chart 1:1 in screen space, you do so by updating 
  * the chart's *world* coords with dx/k, dy/k in the 'drag' event. 
  */
-const CanvasBackground = ({ recenterRef, transactionData, onHover, ...props }) => {
+const CanvasBackground = ({ 
+  onSpentOutputClick,
+  recenterRef, 
+  allTransactions, // array of transaction data
+  globalMaxValue, 
+  ...props 
+}) => {
   const svgRef = useRef(null);
-
-  // The current D3 zoom transform: {x, y, k}
   const [transform, setTransform] = useState(d3.zoomIdentity);
 
-  // We'll store a "chart position" in *world coords* 
-  // (so if the user drags 10 px at k=2 => +5 in world coords).
-  const [chartPos, setChartPos] = useState({ x: 0, y: 0 });
+  // Each chart has position in an array
+  const [chartPositions, setChartPositions] = useState([]);
 
-  // The circle is placed at the first input line start
-  const [circlePos, setCirclePos] = useState({ x: -740, y: -50 });
+  useEffect(() => {
+    // Remove the old re-initializing code. Instead, only add positions if necessary.
+    if (!allTransactions) return;
+    if (allTransactions.length > chartPositions.length) {
+      // Add a new chart position offset from the last transaction or from stored index
+      const newPositions = [...chartPositions];
+      newPositions.push({ x: newPositions[newPositions.length - 1]?.x + 500 || 0, y: 0 });
+      setChartPositions(newPositions);
+    }
+  }, [allTransactions]);
 
   // 1) Initialize D3 Zoom on the entire <svg>, controlling <g.world>
   useEffect(() => {
     const svgEl = d3.select(svgRef.current);
+    const worldGroup = svgEl.select('.world');
+    
     const zoomBehavior = d3.zoom()
       .scaleExtent([0.1, 10])
       .on('zoom', (event) => {
-        // store transform => triggers re-render => <g.world> transforms
+        worldGroup.attr('transform', event.transform);
         setTransform(event.transform);
       });
 
     svgEl.call(zoomBehavior);
 
-    // Optionally center on mount
+    // Initial center
     const { width, height } = svgRef.current.getBoundingClientRect();
     const initialTransform = d3.zoomIdentity
       .translate(width / 2, height / 2)
       .scale(1);
+    
     svgEl.call(zoomBehavior.transform, initialTransform);
     setTransform(initialTransform);
+
+    return () => {
+      svgEl.on('.zoom', null);
+    };
   }, []);
 
   // 2) Recenter if parent calls recenterRef
@@ -69,43 +87,55 @@ const CanvasBackground = ({ recenterRef, transactionData, onHover, ...props }) =
   // 3) Drag the chart 1:1 in screen => dx/k, dy/k in world coords
   useEffect(() => {
     const svgEl = d3.select(svgRef.current);
-    const handle = svgEl.select('.drag-handle');
+    let rAF = null;
+    allTransactions?.forEach((_, idx) => {
+      const handle = svgEl.select(`.drag-handle-${idx}`);
+      const dragStart = { sx: 0, sy: 0, cx: 0, cy: 0 };
+      const dragBehavior = d3.drag()
+        .on('start', (event) => {
+          event.sourceEvent.stopPropagation();
+          const [px, py] = d3.pointer(event, svgEl.node());
+          dragStart.sx = px;
+          dragStart.sy = py;
+          dragStart.cx = chartPositions[idx].x;
+          dragStart.cy = chartPositions[idx].y;
+        })
+        .on('drag', (event) => {
+          if (rAF) cancelAnimationFrame(rAF);
+          rAF = requestAnimationFrame(() => {
+            const [px, py] = d3.pointer(event, svgEl.node());
+            const dxScreen = px - dragStart.sx;
+            const dyScreen = py - dragStart.sy;
+            const dxWorld = dxScreen / transform.k;
+            const dyWorld = dyScreen / transform.k;
 
-    const dragStart = { sx: 0, sy: 0, cx: 0, cy: 0 };
-    const dragBehavior = d3.drag()
-      .on('start', (event) => {
-        event.sourceEvent.stopPropagation();
-        const [px, py] = d3.pointer(event, svgEl.node());
-        dragStart.sx = px;
-        dragStart.sy = py;
-        dragStart.cx = chartPos.x;
-        dragStart.cy = chartPos.y;
-      })
-      .on('drag', (event) => {
-        const [px, py] = d3.pointer(event, svgEl.node());
-        const dxScreen = px - dragStart.sx;
-        const dyScreen = py - dragStart.sy;
-
-        const dxWorld = dxScreen / transform.k;
-        const dyWorld = dyScreen / transform.k;
-
-        setChartPos({
-          x: dragStart.cx + dxWorld,
-          y: dragStart.cy + dyWorld
+            setChartPositions((prev) => {
+              const newPositions = [...prev];
+              newPositions[idx] = {
+                x: dragStart.cx + dxWorld,
+                y: dragStart.cy + dyWorld
+              };
+              return newPositions;
+            });
+          });
+        })
+        .on('end', () => {
+          if (rAF) {
+            cancelAnimationFrame(rAF);
+            rAF = null;
+          }
         });
-      });
-
-    handle.call(dragBehavior);
+      handle.call(dragBehavior);
+    });
 
     return () => {
-      handle.on('.drag', null);
+      if (rAF) cancelAnimationFrame(rAF);
+      allTransactions?.forEach((_, idx) => {
+        const handle = svgEl.select(`.drag-handle-${idx}`);
+        handle.on('.drag', null);
+      });
     };
-  }, [chartPos, transform]);
-
-  // Called from TransactionChart after it draws S-bend lines
-  const handlePositionsComputed = ({ firstInputX, firstInputY }) => {
-    setCirclePos({ x: firstInputX, y: firstInputY });
-  };
+  }, [allTransactions, chartPositions, transform]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -113,13 +143,13 @@ const CanvasBackground = ({ recenterRef, transactionData, onHover, ...props }) =
         ref={svgRef}
         style={{
           position: 'absolute',
-          top: 0, left: 0,
-          width: '100%', height: '100%'
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          touchAction: 'none' // Prevent touch scrolling interference
         }}
       >
-        {/* 
-          .world => we apply the transform => the grid + chart scale/pan together
-        */}
         <g
           className="world"
           transform={`translate(${transform.x}, ${transform.y}) scale(${transform.k})`}
@@ -128,22 +158,24 @@ const CanvasBackground = ({ recenterRef, transactionData, onHover, ...props }) =
           <GridBackground />
 
           {/* B) The chart container, offset by chartPos in world coords */}
-          <g transform={`translate(${chartPos.x}, ${chartPos.y})`}>
-            <TransactionChart
-              transactionData={transactionData}
-              onHover={onHover}
-              onPositionsComputed={handlePositionsComputed}
-              {...props}
-            />
-            <circle
-              className="drag-handle"
-              cx={circlePos.x}
-              cy={circlePos.y}
-              r={20}
-              fill="#888"
-              style={{ cursor: 'move' }}
-            />
-          </g>
+          {allTransactions?.map((tx, idx) => (
+            <g key={idx} transform={`translate(${chartPositions[idx]?.x || 0}, ${chartPositions[idx]?.y || 0})`}>
+              <TransactionChart
+                transactionData={tx}
+                onSpentOutputClick={(spentTxid) => onSpentOutputClick(spentTxid, idx)}
+                globalMaxValue={globalMaxValue}
+                {...props}
+              />
+              <circle
+                className={`drag-handle-${idx}`}
+                cx={-200} // example offset
+                cy={0}
+                r={20}
+                fill="#888"
+                style={{ cursor: 'move' }}
+              />
+            </g>
+          ))}
         </g>
       </svg>
     </div>

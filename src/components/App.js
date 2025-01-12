@@ -1,34 +1,105 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { fetchTransaction } from '../api/api';
 import CanvasBackground from './CanvasBackground';
 import UTXOInfo from './UTXOInfo';
+import { TransactionsProvider, useTransactions } from '../contexts/TransactionsContext';
 
-const App = () => {
-  const [transactionId, setTransactionId] = useState('');
-  const [transactionData, setTransactionData] = useState(null);
+function throttle(fn, limit) {
+  let inThrottle = false, lastFn;
+  return (...args) => {
+    if (!inThrottle) {
+      fn(...args);
+      inThrottle = true;
+      setTimeout(() => {
+        inThrottle = false;
+        if (lastFn) {
+          lastFn(...args);
+          lastFn = null;
+        }
+      }, limit);
+    } else {
+      lastFn = () => fn(...args);
+    }
+  };
+}
+
+const AppContent = () => {
+  const [transactionIds, setTransactionIds] = useState([]);
+  const [transactions, setTransactions] = useState([]); // local array for quick reference
   const recenterRef = useRef();
 
-  // New state variables for sliders
-  const [lineThicknessRatio, setLineThicknessRatio] = useState(1); // Default ratio
-  const [lineSpacing, setLineSpacing] = useState(10); // Default spacing in pixels
-  const [lineLength, setLineLength] = useState(400); // Default line length
-  const [minLineThickness, setMinLineThickness] = useState(0.1); // Default minimum thickness
+  // Use refs to store values without re-rendering on every slider move
+  const lineThicknessRatioRef = useRef(1);
+  const lineSpacingRef = useRef(10);
+  const lineLengthRef = useRef(400);
+  const minLineThicknessRef = useRef(0.1);
+
+  // We keep real state to pass into CanvasBackground,
+  // but we only update it via a throttled function
+  const [lineThicknessRatio, setLineThicknessRatio] = useState(lineThicknessRatioRef.current);
+  const [lineSpacing, setLineSpacing] = useState(lineSpacingRef.current);
+  const [lineLength, setLineLength] = useState(lineLengthRef.current);
+  const [minLineThickness, setMinLineThickness] = useState(minLineThicknessRef.current);
+
+  const updateSlidersThrottled = useCallback(throttle(() => {
+    setLineThicknessRatio(lineThicknessRatioRef.current);
+    setLineSpacing(lineSpacingRef.current);
+    setLineLength(lineLengthRef.current);
+    setMinLineThickness(minLineThicknessRef.current);
+  }, 50), []); // Change limit to 10ms for 100 updates per second
+
+  const handleThicknessChange = (val) => {
+    lineThicknessRatioRef.current = parseFloat(val);
+    updateSlidersThrottled();
+  };
+  const handleSpacingChange = (val) => {
+    lineSpacingRef.current = parseInt(val, 10);
+    updateSlidersThrottled();
+  };
+  const handleLengthChange = (val) => {
+    lineLengthRef.current = parseInt(val, 10);
+    updateSlidersThrottled();
+  };
+  const handleMinThicknessChange = (val) => {
+    minLineThicknessRef.current = parseFloat(val);
+    updateSlidersThrottled();
+  };
 
   const [hoveredUtxo, setHoveredUtxo] = useState(null);
   const [hoveredType, setHoveredType] = useState(null);
 
-  const handleInputChange = (e) => {
-    setTransactionId(e.target.value);
+  const handleMultipleInputChange = (e) => {
+    // e.g. split by comma
+    setTransactionIds(e.target.value.split(',').map(id => id.trim()).filter(Boolean));
   };
 
-  const handleButtonClick = async () => {
-    if (!transactionId) return; // Prevent empty requests
+  const { addTransaction, globalMaxValue } = useTransactions();
+
+  const handleFetchAll = async () => {
+    const newTxs = [];
+    for (const txid of transactionIds) {
+      if (!txid) continue;
+      try {
+        const data = await fetchTransaction(txid);
+        newTxs.push(data);
+        addTransaction(data);
+      } catch (error) {
+        console.error('Error fetching transaction data for', txid, error);
+      }
+    }
+    setTransactions(newTxs);
+  };
+
+  // Modified to accept the index
+  const handleSpentOutputClick = async (spentTxid, clickedIndex) => {
     try {
-      const data = await fetchTransaction(transactionId);
-      setTransactionData(data);
+      const data = await fetchTransaction(spentTxid);
+      setTransactions((prev) => [...prev, data]);
+      addTransaction(data);
+      // Optionally store or return the clickedIndex for position in CanvasBackground,
+      // but we’ll just rely on CanvasBackground to recalculate positions.
     } catch (error) {
-      console.error('Error fetching transaction data:', error);
-      alert('Failed to fetch transaction. Please check the ID and try again.');
+      console.error('Error fetching spent tx', spentTxid, error);
     }
   };
 
@@ -36,15 +107,17 @@ const App = () => {
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
       <CanvasBackground
         recenterRef={recenterRef}
-        transactionData={transactionData}
+        allTransactions={transactions}
+        globalMaxValue={globalMaxValue}
         lineThicknessRatio={lineThicknessRatio} // Pass slider value
         lineSpacing={lineSpacing} // Pass slider value
         lineLength={lineLength}
         minLineThickness={minLineThickness}
-        onHover={(utxo, type) => {
+        onHover={(utxo, type, tx) => {
           setHoveredUtxo(utxo);
-          setHoveredType(type);
+          setHoveredType({ tx, type }); // store transaction as well
         }}
+        onSpentOutputClick={handleSpentOutputClick} // pass down
       />
       <div style={{
         position: 'absolute',
@@ -57,39 +130,13 @@ const App = () => {
       }}>
         <input
           type="text"
-          value={transactionId}
-          onChange={handleInputChange}
-          placeholder="Enter Transaction ID"
+          onChange={handleMultipleInputChange}
+          placeholder="Enter multiple TXIDs separated by commas"
           style={{ width: '300px', padding: '8px' }}
         />
-        <button onClick={handleButtonClick} style={{ marginLeft: '10px', padding: '8px 16px' }}>
-          Fetch Transaction
+        <button onClick={handleFetchAll} style={{ marginLeft: '10px', padding: '8px 16px' }}>
+          Fetch All
         </button>
-        {transactionData && (
-          <div style={{ marginTop: '10px' }}>
-            <h3>Inputs</h3>
-            <ul>
-              {transactionData.vin.map((input, index) => (
-                <li key={index}>
-                  ID: {input.txid}, Amount: {input.prevout ? input.prevout.value : 'N/A'}
-                </li>
-              ))}
-            </ul>
-            <h3>Outputs</h3>
-            <ul>
-              {transactionData.vout.map((output, index) => (
-                <li key={index}>
-                  Address: {output.scriptpubkey_address}, Amount: {output.value}
-                </li>
-              ))}
-              {transactionData.fee && (
-                <li>
-                  Fee: {transactionData.fee}
-                </li>
-              )}
-            </ul>
-          </div>
-        )}
       </div>
       {/* Recenter Button */}
       <button
@@ -126,8 +173,8 @@ const App = () => {
             min="0.5"
             max="2"
             step="0.1"
-            value={lineThicknessRatio}
-            onChange={(e) => setLineThicknessRatio(parseFloat(e.target.value))}
+            defaultValue={lineThicknessRatioRef.current}
+            onChange={(e) => handleThicknessChange(e.target.value)}
             style={{ width: '120px' }} // Adjusted width
           />
           <span>{lineThicknessRatio.toFixed(1)}</span>
@@ -140,8 +187,8 @@ const App = () => {
             min="0"
             max="50"
             step="1"
-            value={lineSpacing}
-            onChange={(e) => setLineSpacing(parseInt(e.target.value, 10))}
+            defaultValue={lineSpacingRef.current}
+            onChange={(e) => handleSpacingChange(e.target.value)}
             style={{ width: '120px' }}
           />
           <span>{lineSpacing}</span>
@@ -154,8 +201,8 @@ const App = () => {
             min="200"
             max="1500" // Increased maximum from 800 to 1500
             step="100" // Adjusted step for finer control
-            value={lineLength}
-            onChange={(e) => setLineLength(parseInt(e.target.value, 10))}
+            defaultValue={lineLengthRef.current}
+            onChange={(e) => handleLengthChange(e.target.value)}
             style={{ width: '120px' }}
           />
           <span>{lineLength}</span>
@@ -168,8 +215,8 @@ const App = () => {
             min="0.1"
             max="5"
             step="0.1"
-            value={minLineThickness}
-            onChange={(e) => setMinLineThickness(parseFloat(e.target.value))}
+            defaultValue={minLineThicknessRef.current}
+            onChange={(e) => handleMinThicknessChange(e.target.value)}
             style={{ width: '120px' }}
           />
           <span>{minLineThickness.toFixed(1)}</span>
@@ -177,7 +224,7 @@ const App = () => {
       </div>
 
       {/* UTXOInfo Popup */}
-      {hoveredUtxo && (
+      {hoveredUtxo && hoveredType?.tx && (
         <div style={{
           position: 'absolute',
           top: 10,
@@ -186,14 +233,23 @@ const App = () => {
         }}>
           <UTXOInfo
             utxo={hoveredUtxo}
-            totalValue={transactionData.vin.reduce((sum, input) => sum + (input.prevout?.value || 0), 0)}
-            type={hoveredType}
+            totalValue={hoveredType.tx.vin.reduce(
+              (sum, input) => sum + (input.prevout?.value || 0),
+              0
+            )}
+            type={hoveredType.type}
           />
         </div>
       )}
     </div>
   );
 };
+
+const App = () => (
+  <TransactionsProvider>
+    <AppContent />
+  </TransactionsProvider>
+);
 
 export default App;
 
