@@ -1,81 +1,58 @@
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 
-const GridBackground = ({ transform }) => {
-  const canvasRef = useRef();
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-
-    // Match canvas resolution to display
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
-
-    // Draw grid
-    const drawGrid = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      const gridSize = 12.5; // Halved grid size
-      const { x, y, k } = transform;
-
-      // Dynamically scale the base size to reduce detail at lower zoom levels
-      let adjustedGridSize = gridSize;
-      if (k < 0.5) { adjustedGridSize = gridSize * 2; }
-      if (k < 0.25) { adjustedGridSize = gridSize * 4; }
-      // ...and so on if you want more thresholds...
-
-      const scaledGridSize = adjustedGridSize * k;
-
-      ctx.fillStyle = '#444';
-      ctx.fillRect(0, 0, rect.width, rect.height);
-
-      ctx.fillStyle = '#333';
-
-      // Calculate global tile indices to maintain consistent coloring
-      const globalIStart = Math.floor(-x / scaledGridSize) - 1;
-      const globalJStart = Math.floor(-y / scaledGridSize) - 1;
-
-      for (let i = -1; i < Math.ceil(rect.width / scaledGridSize) + 2; i++) {
-        for (let j = -1; j < Math.ceil(rect.height / scaledGridSize) + 2; j++) { // Corrected to use j
-          const globalI = globalIStart + i;
-          const globalJ = globalJStart + j;
-
-          // Determine color based on global tile indices to prevent color swapping
-          if ((globalI + globalJ) % 2 === 0) {
-            ctx.fillStyle = '#333';
-          } else {
-            ctx.fillStyle = '#444';
-          }
-
-          ctx.fillRect(
-            i * scaledGridSize + ((x % scaledGridSize) + scaledGridSize) % scaledGridSize,
-            j * scaledGridSize + ((y % scaledGridSize) + scaledGridSize) % scaledGridSize,
-            scaledGridSize,
-            scaledGridSize
-          );
-        }
-      }
-    };
-
-    drawGrid();
-  }, [transform]);
-
+/**
+ * This component returns an SVG <g> with a <defs> <pattern> and a <rect> 
+ * that extends across some large area. The pattern is repeated automatically by SVG.
+ *
+ * Usage:
+ *   <g className="zoom-container">  // subject to D3 zoom
+ *     <GridBackground />
+ *     ...other stuff...
+ *   </g>
+ */
+function GridBackground() {
   return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        zIndex: 0
-      }}
-    />
+    <g>
+      {/* Define a pattern that draws squares or lines in user space */}
+      <defs>
+        <pattern
+          id="gridPattern"
+          x="0"
+          y="0"
+          width="50"       /* One cell is 50x50 in user-space coords */
+          height="50"
+          patternUnits="userSpaceOnUse"
+        >
+          {/* Fill the cell with a darker color */}
+          <rect x="0" y="0" width="50" height="50" fill="#444" />
+
+          {/* Optionally draw lines to create a grid effect */}
+          <path
+            d="M 50 0 L 0 0 0 50"
+            fill="none"
+            stroke="#333"
+            strokeWidth="1"
+          />
+        </pattern>
+      </defs>
+
+      {/* 
+        A big <rect> that uses the pattern as a fill.
+        If your world is effectively infinite, just pick large coords 
+        so the user doesn't see beyond it. 
+      */}
+      <rect
+        x="-100000" 
+        y="-100000"
+        width="200000"
+        height="200000"
+        fill="url(#gridPattern)"
+      />
+    </g>
   );
-};
+}
 
 export default GridBackground;
+
+
+
