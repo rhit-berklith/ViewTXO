@@ -10,12 +10,15 @@ const TransactionChart = React.memo(({
   lineLength = 1500,
   minLineThickness = 0.1,
   onHover,
-  onPositionsComputed,
-  onSpentOutputClick // Add new prop
+  onSpentOutputClick, // Add new prop
+  onLayoutChange, // Add new prop for communicating positions
+  selectedOutputs = new Map() // Add default value
+  // Remove onPositionsComputed prop
 }) => {
   const groupRef = useRef(null);
   const [outspends, setOutspends] = useState(null);
   const lastPositionsRef = useRef({ x: null, y: null });
+  const lastLayoutRef = useRef({ x: null, y: null });
 
   // Fetch outspends
   useEffect(() => {
@@ -76,6 +79,16 @@ const TransactionChart = React.memo(({
     let firstInputX = null;
     let firstInputY = null;
 
+    // Calculate the Y position of the topmost input
+    const inputStartY = -(totalInputThickness + (inputThicknesses.length - 1) * lineSpacing) / 2;
+    const newLayout = { x: -halfLength, y: inputStartY };
+
+    const { x, y } = lastLayoutRef.current;
+    if (x !== newLayout.x || y !== newLayout.y) {
+      lastLayoutRef.current = newLayout;
+      onLayoutChange?.(newLayout);
+    }
+
     // Draw inputs
     inputThicknesses.forEach((thickness, i) => {
       const startY = inputEndpointY + thickness / 2;
@@ -125,17 +138,22 @@ const TransactionChart = React.memo(({
 
       // If spent, add small rect
       if (outspends[i]?.spent) {
+        const outputKey = `${transactionData.txid}_${i}`;
+        const isSelected = selectedOutputs.has(outputKey);
+        
         g.append('rect')
           .attr('x', halfLength + lineSpacing / 2)
           .attr('y', endY - thickness / 2)
           .attr('width', lineSpacing * 2)
           .attr('height', thickness)
           .attr('fill', '#aaa')
+          .attr('stroke', isSelected ? '#ff0' : 'none')
+          .attr('stroke-width', isSelected ? 2 : 0)
           .style('cursor', 'pointer')
           .on('click', () => {
-            const spentTxid = outspends[i].txid; // or spend.txid
+            const spentTxid = outspends[i].txid;
             if (spentTxid && onSpentOutputClick) {
-              onSpentOutputClick(spentTxid, i);
+              onSpentOutputClick(spentTxid, transactionData.txid, i);
             }
           });
       }
@@ -167,16 +185,8 @@ const TransactionChart = React.memo(({
         .on('mouseleave', () => onHover?.(null, null, null));
     }
 
-    // Call onPositionsComputed only if new coords differ
-    if (onPositionsComputed && firstInputX != null && firstInputY != null) {
-      if (
-        lastPositionsRef.current.x !== firstInputX ||
-        lastPositionsRef.current.y !== firstInputY
-      ) {
-        lastPositionsRef.current = { x: firstInputX, y: firstInputY };
-        onPositionsComputed({ firstInputX, firstInputY });
-      }
-    }
+    // Remove the onPositionsComputed callback section
+    
   }, [
     transactionData, 
     outspends, 
@@ -185,7 +195,9 @@ const TransactionChart = React.memo(({
     lineSpacing, 
     lineLength, 
     minLineThickness,
-    onSpentOutputClick // Add dependency
+    onSpentOutputClick, // Add dependency
+    onLayoutChange, // Add dependency
+    selectedOutputs // Add dependency
   ]); // removed onHover & onPositionsComputed to reduce re-renders
 
   return <g ref={groupRef} />;

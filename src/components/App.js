@@ -27,6 +27,7 @@ const AppContent = () => {
   const [transactionIds, setTransactionIds] = useState([]);
   const [transactions, setTransactions] = useState([]); // local array for quick reference
   const recenterRef = useRef();
+  const initialScaleRef = useRef(null);
 
   // Use refs to store values without re-rendering on every slider move
   const lineThicknessRatioRef = useRef(1);
@@ -67,6 +68,7 @@ const AppContent = () => {
 
   const [hoveredUtxo, setHoveredUtxo] = useState(null);
   const [hoveredType, setHoveredType] = useState(null);
+  const [selectedOutputs, setSelectedOutputs] = useState(new Map()); // Map<txid_index, childTxId>
 
   const handleMultipleInputChange = (e) => {
     // e.g. split by comma
@@ -83,6 +85,13 @@ const AppContent = () => {
         const data = await fetchTransaction(txid);
         newTxs.push(data);
         addTransaction(data);
+        
+        // Store initial scale values from first transaction
+        if (!initialScaleRef.current) {
+          initialScaleRef.current = {
+            value: data.vin.reduce((sum, input) => sum + (input.prevout?.value || 0), 0)
+          };
+        }
       } catch (error) {
         console.error('Error fetching transaction data for', txid, error);
       }
@@ -91,13 +100,39 @@ const AppContent = () => {
   };
 
   // Modified to accept the index
-  const handleSpentOutputClick = async (spentTxid, clickedIndex) => {
+  const handleSpentOutputClick = async (spentTxid, clickedTxId, outputIndex) => {
+    const outputKey = `${clickedTxId}_${outputIndex}`;
+    
+    // If already selected, remove the child transaction
+    if (selectedOutputs.has(outputKey)) {
+      const childTxId = selectedOutputs.get(outputKey);
+      setTransactions(prev => prev.filter(tx => tx.txid !== childTxId));
+      setSelectedOutputs(prev => {
+        const next = new Map(prev);
+        next.delete(outputKey);
+        return next;
+      });
+      return;
+    }
+
+    // Otherwise fetch and add new transaction
     try {
       const data = await fetchTransaction(spentTxid);
-      setTransactions((prev) => [...prev, data]);
+
+      // Use the scale from the first transaction
+      if (!initialScaleRef.current) {
+        initialScaleRef.current = {
+          value: data.vin.reduce((sum, input) => sum + (input.prevout?.value || 0), 0)
+        };
+      }
+
+      setTransactions(prev => [...prev, data]);
       addTransaction(data);
-      // Optionally store or return the clickedIndex for position in CanvasBackground,
-      // but we’ll just rely on CanvasBackground to recalculate positions.
+      setSelectedOutputs(prev => {
+        const next = new Map(prev);
+        next.set(outputKey, data.txid);
+        return next;
+      });
     } catch (error) {
       console.error('Error fetching spent tx', spentTxid, error);
     }
@@ -118,6 +153,8 @@ const AppContent = () => {
           setHoveredType({ tx, type }); // store transaction as well
         }}
         onSpentOutputClick={handleSpentOutputClick} // pass down
+        selectedOutputs={selectedOutputs}
+        initialScale={initialScaleRef.current}
       />
       <div style={{
         position: 'absolute',

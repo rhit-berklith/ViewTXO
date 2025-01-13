@@ -15,10 +15,13 @@ import TransactionChart from './TransactionChart';
  * the chart's *world* coords with dx/k, dy/k in the 'drag' event. 
  */
 const CanvasBackground = ({ 
+  selectedOutputs,
   onSpentOutputClick,
   recenterRef, 
   allTransactions, // array of transaction data
   globalMaxValue, 
+  lineSpacing = 10, // Add this with default value
+  initialScale,
   ...props 
 }) => {
   const svgRef = useRef(null);
@@ -26,6 +29,7 @@ const CanvasBackground = ({
 
   // Each chart has position in an array
   const [chartPositions, setChartPositions] = useState([]);
+  const [chartLayouts, setChartLayouts] = useState([]); // Store input positions
 
   useEffect(() => {
     // Remove the old re-initializing code. Instead, only add positions if necessary.
@@ -164,16 +168,35 @@ const CanvasBackground = ({
                 transactionData={tx}
                 onSpentOutputClick={(spentTxid) => onSpentOutputClick(spentTxid, idx)}
                 globalMaxValue={globalMaxValue}
+                lineSpacing={lineSpacing}
+                selectedOutputs={selectedOutputs}
+                initialScale={initialScale}
                 {...props}
+                onLayoutChange={(layout) => {
+                  setChartLayouts(prev => {
+                    const next = [...prev];
+                    next[idx] = layout;
+                    return next;
+                  });
+                }}
               />
-              <circle
-                className={`drag-handle-${idx}`}
-                cx={-200} // example offset
-                cy={0}
-                r={20}
-                fill="#888"
-                style={{ cursor: 'move' }}
-              />
+              {chartLayouts[idx] && (
+                <g
+                  className={`drag-handle-${idx}`}
+                  transform={`translate(
+                    ${chartLayouts[idx].x - lineSpacing/2}, 
+                    ${chartLayouts[idx].y - lineSpacing/2}
+                  )`}
+                  style={{ cursor: 'move' }}
+                >
+                  <path
+                    d="M 0,0 L 0,40 L 5,40 L 5,5 L 40,5 L 40,0 Z"
+                    fill="#888"
+                    stroke="#666"
+                    strokeWidth="1"
+                  />
+                </g>
+              )}
             </g>
           ))}
         </g>
