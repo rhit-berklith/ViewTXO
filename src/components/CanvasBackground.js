@@ -32,14 +32,22 @@ const CanvasBackground = ({
   const [chartLayouts, setChartLayouts] = useState([]); // Store input positions
 
   useEffect(() => {
-    // Remove the old re-initializing code. Instead, only add positions if necessary.
-    if (!allTransactions) return;
-    if (allTransactions.length > chartPositions.length) {
-      // Add a new chart position offset from the last transaction or from stored index
-      const newPositions = [...chartPositions];
-      newPositions.push({ x: newPositions[newPositions.length - 1]?.x + 500 || 0, y: 0 });
-      setChartPositions(newPositions);
-    }
+    if (!allTransactions?.length) return;
+    
+    // Initialize positions for any new nodes
+    setChartPositions(prev => {
+      const newPositions = [...prev];
+      allTransactions.forEach((node, idx) => {
+        if (!newPositions[idx]) {
+          // Use node's position if it exists, otherwise calculate new position
+          newPositions[idx] = node.position || {
+            x: (prev[idx-1]?.x || 0) + 500,
+            y: 0
+          };
+        }
+      });
+      return newPositions;
+    });
   }, [allTransactions]);
 
   // 1) Initialize D3 Zoom on the entire <svg>, controlling <g.world>
@@ -162,11 +170,14 @@ const CanvasBackground = ({
           <GridBackground />
 
           {/* B) The chart container, offset by chartPos in world coords */}
-          {allTransactions?.map((tx, idx) => (
-            <g key={idx} transform={`translate(${chartPositions[idx]?.x || 0}, ${chartPositions[idx]?.y || 0})`}>
+          {allTransactions?.map((node, idx) => (
+            <g 
+              key={node.data.txid} 
+              transform={`translate(${chartPositions[idx]?.x || 0}, ${chartPositions[idx]?.y || 0})`}
+            >
               <TransactionChart
-                transactionData={tx}
-                onSpentOutputClick={(spentTxid) => onSpentOutputClick(spentTxid, idx)}
+                transactionData={node.data}
+                onSpentOutputClick={(spentTxid) => onSpentOutputClick(spentTxid, node, idx)}
                 globalMaxValue={globalMaxValue}
                 lineSpacing={lineSpacing}
                 selectedOutputs={selectedOutputs}

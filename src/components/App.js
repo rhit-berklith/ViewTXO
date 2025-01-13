@@ -23,9 +23,20 @@ function throttle(fn, limit) {
   };
 }
 
+// Define the tree node structure
+class TransactionNode {
+  constructor(data, parent = null) {
+    this.data = data;
+    this.parent = parent;
+    this.children = new Map(); // Map<outputIndex, TransactionNode>
+    this.position = { x: 0, y: 0 };
+  }
+}
+
 const AppContent = () => {
-  const [transactionIds, setTransactionIds] = useState([]);
-  const [transactions, setTransactions] = useState([]); // local array for quick reference
+  const [rootNodes, setRootNodes] = useState([]);
+  const [transactionId, setTransactionId] = useState(''); // Add this state
+  const [selectedOutputs, setSelectedOutputs] = useState(new Map());
   const recenterRef = useRef();
   const initialScaleRef = useRef(null);
 
@@ -68,25 +79,31 @@ const AppContent = () => {
 
   const [hoveredUtxo, setHoveredUtxo] = useState(null);
   const [hoveredType, setHoveredType] = useState(null);
-  const [selectedOutputs, setSelectedOutputs] = useState(new Map()); // Map<txid_index, childTxId>
 
   const handleMultipleInputChange = (e) => {
-    // e.g. split by comma
-    setTransactionIds(e.target.value.split(',').map(id => id.trim()).filter(Boolean));
+    setTransactionId(e.target.value); // Update this
   };
 
   const { addTransaction, globalMaxValue } = useTransactions();
 
   const handleFetchAll = async () => {
-    const newTxs = [];
-    for (const txid of transactionIds) {
-      if (!txid) continue;
+    if (!transactionId) return;
+    
+    const ids = transactionId.split(',').map(id => id.trim()).filter(Boolean);
+    console.log('Fetching transactions for IDs:', ids);
+
+    const newRoots = [];
+    for (const txid of ids) {
       try {
+        console.log('Fetching transaction:', txid);
         const data = await fetchTransaction(txid);
-        newTxs.push(data);
+        console.log('Received transaction data:', data);
+        
+        const node = new TransactionNode(data);
+        node.position = { x: newRoots.length * 500, y: 0 }; // Set initial position
+        newRoots.push(node);
         addTransaction(data);
         
-        // Store initial scale values from first transaction
         if (!initialScaleRef.current) {
           initialScaleRef.current = {
             value: data.vin.reduce((sum, input) => sum + (input.prevout?.value || 0), 0)
@@ -96,53 +113,87 @@ const AppContent = () => {
         console.error('Error fetching transaction data for', txid, error);
       }
     }
-    setTransactions(newTxs);
+    
+    console.log('Setting new roots:', newRoots);
+    setRootNodes(newRoots);
   };
 
-  // Modified to accept the index
-  const handleSpentOutputClick = async (spentTxid, clickedTxId, outputIndex) => {
-    const outputKey = `${clickedTxId}_${outputIndex}`;
+  // Modified to work with tree structure
+  const handleSpentOutputClick = async (spentTxid, parentNode, outputIndex) => {
+    const outputKey = `${parentNode.data.txid}_${outputIndex}`;
     
-    // If already selected, remove the child transaction
+    // If already selected, remove this node and all its children
     if (selectedOutputs.has(outputKey)) {
-      const childTxId = selectedOutputs.get(outputKey);
-      setTransactions(prev => prev.filter(tx => tx.txid !== childTxId));
-      setSelectedOutputs(prev => {
-        const next = new Map(prev);
-        next.delete(outputKey);
-        return next;
-      });
+      const removeNode = (node) => {
+        // Recursively remove all children
+        for (const childNode of node.children.values()) {
+          removeNode(childNode);
+        }
+        // Remove from parent's children
+        if (node.parent) {
+          const parentKey = `${node.parent.data.txid}_${node.outputIndex}`;
+          setSelectedOutputs(prev => {
+            const next = new Map(prev);
+            next.delete(parentKey);
+            return next;
+          });
+        }
+      };
+
+      const childNode = parentNode.children.get(outputIndex);
+      if (childNode) {
+        removeNode(childNode);
+        parentNode.children.delete(outputIndex);
+        setRootNodes([...rootNodes]); // Force update
+      }
       return;
     }
 
-    // Otherwise fetch and add new transaction
+    // Otherwise fetch and add new child node
     try {
       const data = await fetchTransaction(spentTxid);
+      const newNode = new TransactionNode(data, parentNode);
+      newNode.outputIndex = outputIndex;
+      
+      // Position the new node to the right of its parent
+      newNode.position = {
+        x: parentNode.position.x + 500,
+        y: parentNode.position.y
+      };
 
-      // Use the scale from the first transaction
-      if (!initialScaleRef.current) {
-        initialScaleRef.current = {
-          value: data.vin.reduce((sum, input) => sum + (input.prevout?.value || 0), 0)
-        };
-      }
-
-      setTransactions(prev => [...prev, data]);
+      parentNode.children.set(outputIndex, newNode);
       addTransaction(data);
       setSelectedOutputs(prev => {
         const next = new Map(prev);
         next.set(outputKey, data.txid);
         return next;
       });
+      setRootNodes([...rootNodes]); // Force update
     } catch (error) {
       console.error('Error fetching spent tx', spentTxid, error);
     }
+  };
+
+  // Flatten tree for rendering
+  const getAllNodes = (roots) => {
+    const nodes = [];
+    const traverse = (node) => {
+      console.log('Traversing node:', node);
+      nodes.push(node);
+      for (const child of node.children.values()) {
+        traverse(child);
+      }
+    };
+    roots.forEach(traverse);
+    console.log('All nodes:', nodes);
+    return nodes;
   };
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
       <CanvasBackground
         recenterRef={recenterRef}
-        allTransactions={transactions}
+        allTransactions={getAllNodes(rootNodes)}
         globalMaxValue={globalMaxValue}
         lineThicknessRatio={lineThicknessRatio} // Pass slider value
         lineSpacing={lineSpacing} // Pass slider value
@@ -167,11 +218,16 @@ const AppContent = () => {
       }}>
         <input
           type="text"
+          value={transactionId}
           onChange={handleMultipleInputChange}
-          placeholder="Enter multiple TXIDs separated by commas"
+          placeholder="Enter transaction ID"
           style={{ width: '300px', padding: '8px' }}
         />
-        <button onClick={handleFetchAll} style={{ marginLeft: '10px', padding: '8px 16px' }}>
+        <button 
+          onClick={handleFetchAll} 
+          disabled={!transactionId}
+          style={{ marginLeft: '10px', padding: '8px 16px' }}
+        >
           Fetch All
         </button>
       </div>
